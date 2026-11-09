@@ -723,6 +723,51 @@ class CometParquetWriterSuite extends CometParquetWriterTestBase {
     }
   }
 
+  test("parquet write falls back to Spark when the INT96 write rebase mode is LEGACY") {
+    withTempPath { dir =>
+      val outputPath = new File(dir, "output.parquet").getAbsolutePath
+      val df = spark
+        .range(0, 10)
+        .selectExpr("id", "timestamp_seconds(id + 946684800) AS ts")
+
+      withNativeWriter {
+        withSQLConf(
+          SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key -> "INT96",
+          SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE.key -> "LEGACY") {
+          val plan = captureWritePlan(path => df.write.parquet(path), outputPath)
+          assertNoCometNativeWriteExec(plan)
+        }
+      }
+    }
+  }
+
+  test("parquet write stays native for a LEGACY INT96 rebase mode with INT64 timestamps") {
+    // int96RebaseModeInWrite only applies to INT96 timestamps. With TIMESTAMP_MICROS output Spark
+    // writes INT64 values rebased by datetimeRebaseModeInWrite, so the INT96 mode changes nothing.
+    withTempPath { dir =>
+      val outputPath = new File(dir, "output.parquet").getAbsolutePath
+      val df = spark
+        .range(0, 3)
+        // -14831724303876544 is 1500-01-01 12:34:56.123456 UTC, before the Gregorian cutover.
+        .selectExpr("id", "timestamp_micros(-14831724303876544 + id * 86400000000) AS ts")
+
+      withSQLConf(
+        SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key -> "TIMESTAMP_MICROS",
+        SQLConf.PARQUET_REBASE_MODE_IN_WRITE.key -> "CORRECTED",
+        SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE.key -> "LEGACY") {
+        withNativeWriter {
+          val plan = captureWritePlan(path => df.write.parquet(path), outputPath)
+          assertHasCometNativeWriteExec(plan)
+        }
+
+        val expected = df.collect()
+        withSQLConf(CometConf.COMET_ENABLED.key -> "false") {
+          checkAnswer(spark.read.parquet(outputPath), expected.toSeq)
+        }
+      }
+    }
+  }
+
   test("parquet write with unsupported compression codec falls back to Spark") {
     assume(isSpark35Plus, "lz4_raw was added in Spark 3.5")
     withTempPath { dir =>

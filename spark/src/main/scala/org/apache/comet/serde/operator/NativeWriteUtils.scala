@@ -328,6 +328,11 @@ object NativeWriteUtils {
    * `org.apache.spark.legacyINT96`, so fall back to Spark rather than silently ignoring the
    * requested mode and letting readers trust a "corrected" marker over legacy-intent data.
    * TIMESTAMP_NTZ is exempt because Spark never rebases NTZ values on write.
+   *
+   * `int96RebaseModeInWrite` only governs timestamps that Spark encodes as INT96. When
+   * `spark.sql.parquet.outputTimestampType` is `TIMESTAMP_MICROS` or `TIMESTAMP_MILLIS`, Spark
+   * writes INT64 timestamps rebased by `datetimeRebaseModeInWrite` instead, so a LEGACY INT96
+   * mode has no effect on what Spark writes and is not a reason to fall back.
    */
   def legacyDatetimeRebaseWriteReason(output: Seq[Attribute]): Option[String] = {
     val hasDate = output.exists(a => SupportLevel.containsType(a.dataType, classOf[DateType]))
@@ -338,8 +343,10 @@ object NativeWriteUtils {
     def isLegacy(mode: Any): Boolean = mode.toString == "LEGACY"
     val datetimeLegacy = (hasDate || hasTimestamp) &&
       isLegacy(SQLConf.get.getConf(SQLConf.PARQUET_REBASE_MODE_IN_WRITE))
-    val int96Legacy =
-      hasTimestamp && isLegacy(SQLConf.get.getConf(SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE))
+    val writesInt96 =
+      SQLConf.get.parquetOutputTimestampType == SQLConf.ParquetOutputTimestampType.INT96
+    val int96Legacy = hasTimestamp && writesInt96 &&
+      isLegacy(SQLConf.get.getConf(SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE))
     val legacyModeKeys =
       (if (datetimeLegacy) Seq(SQLConf.PARQUET_REBASE_MODE_IN_WRITE.key) else Nil) ++
         (if (int96Legacy) Seq(SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE.key) else Nil)

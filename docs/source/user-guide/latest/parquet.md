@@ -320,8 +320,9 @@ With `spark.comet.write.parquet.enabled=true`:
   January 1, 1900 that Spark refuses to write
   ([#7047](https://github.com/apache/datafusion-comet/issues/7047)). With
   `spark.sql.parquet.datetimeRebaseModeInWrite=LEGACY` (or
-  `spark.sql.parquet.int96RebaseModeInWrite=LEGACY` for a timestamp column) Comet falls back to
-  Spark, because the native writer cannot rebase values to the hybrid calendar. Each file the
+  `spark.sql.parquet.int96RebaseModeInWrite=LEGACY` for a timestamp column when
+  `spark.sql.parquet.outputTimestampType` is `INT96`) Comet falls back to Spark, because the
+  native writer cannot rebase values to the hybrid calendar. Each file the
   native writer does produce carries the `org.apache.spark.version` footer key, so Spark treats it
   as written by Spark 3.0 or later and reads the values back unchanged under every
   `spark.sql.parquet.datetimeRebaseModeInRead` setting. Files written by a Comet build that
